@@ -2,3 +2,5 @@
 *.env
 *.mod
 *lock
+*.vscode
+*.egg-info

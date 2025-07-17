@@ -1,5 +1,6 @@
 import json
 import urllib.request
+import shutil
 from pathlib import Path
 from .common import (
     REGISTRY_PATH,
@@ -12,6 +13,13 @@ from .common import (
 ensure_dirs()
 
 PYMOD_PATH = Path.cwd() / "py.mod"
+
+def clean_cache():
+    if CACHE_DIR.exists():
+        shutil.rmtree(CACHE_DIR)
+        print(f"Cache directory at {CACHE_DIR} has been removed.")
+    else:
+        print("ℹNo cache found to clean.")
 
 
 def load_registry():

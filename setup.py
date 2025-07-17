@@ -1,11 +1,11 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="pyget",
+    name="pyimporter",
     version="0.1.0",
-    description="Simple module fetcher via GitHub raw URLs",
-    author="Your Name",
-    author_email="youremail@example.com",
+    description="Import Python modules from remote URLs like Go or Bun",
+    author="Fadhel Ijlal",
+    author_email="fadhelijlalfalah@gmail.com",
     packages=find_packages(),
     include_package_data=True,
     install_requires=[],

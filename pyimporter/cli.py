@@ -1,5 +1,12 @@
 import sys
-from .registry import install_module, install_from_pymod, list_modules, remove_module, set_registry
+from .registry import (
+    install_module, 
+    install_from_pymod, 
+    list_modules, 
+    remove_module, 
+    set_registry,
+    clean_cache
+    )
 
 def main():
     args = sys.argv[1:]
@@ -25,5 +32,7 @@ def main():
         remove_module(args[1])
     elif cmd == "set-registry" and len(args) == 2:
         set_registry(args[1])
+    elif cmd in ("clean", "clean-cache"):
+        clean_cache()
     else:
         print("Invalid command or missing arguments.")

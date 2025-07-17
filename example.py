@@ -1,6 +1,6 @@
 import pandas
 import pyimporter.importer
-import module
+import hello_mod
 import numpy
 
-print(module.hello())
+print(hello_mod.hello())

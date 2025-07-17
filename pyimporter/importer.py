@@ -1,6 +1,5 @@
 import sys
 import importlib.util
-from pathlib import Path
 from .common import REGISTRY_PATH
 
 class URLModuleLoader:

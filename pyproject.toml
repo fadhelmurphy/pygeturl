@@ -1,0 +1,11 @@
+[project]
+name = "pyimporter"
+version = "0.1.0"
+description = "Import Python modules from remote URLs like Go or Bun"
+authors = [{ name = "Fadhel Ijlal", email = "your@email.com" }]
+readme = "README.md"
+requires-python = ">=3.7"
+dependencies = []
+
+[project.scripts]
+pyget = "pyimporter.cli:main"

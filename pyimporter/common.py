@@ -1,0 +1,16 @@
+from pathlib import Path
+import os
+
+PYGET_HOME = Path.home() / ".pyget"
+CACHE_DIR = PYGET_HOME / "cache"
+REGISTRY_PATH = PYGET_HOME / "registry.json"
+CUSTOM_REGISTRY_PATH = PYGET_HOME / "registry.txt"
+
+def ensure_dirs():
+    PYGET_HOME.mkdir(parents=True, exist_ok=True)
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+def get_custom_registry_url():
+    if CUSTOM_REGISTRY_PATH.exists():
+        return CUSTOM_REGISTRY_PATH.read_text().strip()
+    return "https://raw.githubusercontent.com"

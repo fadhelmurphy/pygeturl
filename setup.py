@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="pyimporter",
+    name="pygeturl",
     version="0.1.0",
     description="Import Python modules from remote URLs like Go or Bun",
     author="Fadhel Ijlal",
@@ -11,7 +11,7 @@ setup(
     install_requires=[],
     entry_points={
         "console_scripts": [
-            "pyimporter=pyimporter.cli:main", 
+            "pygeturl=pygeturl.cli:main", 
         ],
     },
     classifiers=[

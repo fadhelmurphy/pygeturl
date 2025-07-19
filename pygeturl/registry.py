@@ -9,10 +9,15 @@ from .common import (
     ensure_dirs,
     get_custom_registry_url,
 )
+import subprocess
 
 ensure_dirs()
 
 PYMOD_PATH = Path.cwd() / "py.mod"
+
+def is_url(s):
+    return s.startswith("http://") or s.startswith("https://")
+
 
 def clean_cache():
     if CACHE_DIR.exists():
@@ -34,34 +39,54 @@ def save_registry(data):
 
 def parse_spec(arg):
     """
-    Format:
+    Supported formats:
     - user/repo@branch/path/to/module.py
-    - user/repo@branch/path/to/module.py as alias
+    - user/repo/path/to/module.py         (default branch = master)
+    - user/repo                           (default branch = master, default path = repo/repo.py)
+    - user/repo@branch                    (default path = repo/repo.py)
+    - All of the above formats can use ' as alias'
     """
     alias = None
+
     if " as " in arg:
         arg, alias = arg.rsplit(" as ", 1)
         alias = alias.strip()
 
-    if "@" not in arg:
-        raise ValueError("[pyget] Format harus user/repo@branch/path/to/module.py")
+    if "/" not in arg:
+        raise ValueError("[pygeturl] Format must include user/repo")
 
-    repo_part, filepath = arg.split("@", 1)
-    if "/" not in repo_part:
-        raise ValueError("[pyget] Format user/repo tidak valid")
+    if "@" in arg:
+        repo_part, path_part = arg.split("@", 1)
+    else:
+        repo_part = arg
+        path_part = None
 
-    user, repo = repo_part.split("/", 1)
-    parts = filepath.strip("/").split("/")
-    if len(parts) < 2:
-        raise ValueError("[pyget] Format path tidak valid")
+    repo_parts = repo_part.strip("/").split("/")
+    if len(repo_parts) < 2:
+        raise ValueError("[pygeturl] Invalid user/repo format")
 
-    branch = parts[0]
-    path = "/".join(parts[1:])
+    user, repo = repo_parts[:2]
+
+    if path_part:
+        path_parts = path_part.strip("/").split("/")
+        branch = path_parts[0]
+        if len(path_parts) > 1:
+            path = "/".join(path_parts[1:])
+        else:
+            path = f"{repo}/{repo}.py"
+    else:
+        branch = "master"
+        if len(repo_parts) > 2:
+            path = "/".join(repo_parts[2:])
+        else:
+            path = f"{repo}/{repo}.py"
+
     return user, repo, branch, path, alias
-
 
 def build_url(user, repo, branch, path):
     base = get_custom_registry_url()
+    if path is None:
+        path = f"py/packages/{repo}/{repo}.py"
     if base:
         return f"{base.rstrip('/')}/{user}/{repo}/{branch}/{path}"
     return f"https://raw.githubusercontent.com/{user}/{repo}/{branch}/{path}"
@@ -69,32 +94,52 @@ def build_url(user, repo, branch, path):
 
 def ensure_pymod():
     if not PYMOD_PATH.exists():
-        print("[pyget] py.mod not found, creating...")
+        print("[pygeturl] py.mod not found, creating...")
         PYMOD_PATH.write_text(
             "[project]\nname = \"pyget_project\"\nversion = \"0.1.0\"\n\n[dependencies]\n"
         )
-
+        
 def install_module(arg, _alias=None):
-    try:
-        user, repo, branch, path, parsed_alias = parse_spec(arg)
-    except ValueError as e:
-        print(f"[pyget] Error parsing spec: {e}")
+    if "@" in arg:
+        repo_part, branch = arg.split("@", 1)
+    else:
+        repo_part, branch = arg, "master"
+
+    is_python_file = arg.endswith(".py")
+    is_full_repo = not is_url(arg) and not is_python_file and len(repo_part.split("/")) == 2
+
+    if is_full_repo:
+        url = f"git+https://github.com/{repo_part}.git@{branch}"
+        print(f"[pygeturl] Installing package from GitHub: {url}")
+        subprocess.run(["pip", "install", url])
         return
 
-    filename = Path(path).name
-    modulename = filename.replace(".py", "")
-    aliasname = parsed_alias or _alias or modulename
+    if is_url(arg):
+        url = arg
+        aliasname = _alias or Path(url).stem
+        mod_path = CACHE_DIR / "external"
+        mod_path.mkdir(parents=True, exist_ok=True)
+        mod_file = mod_path / f"{aliasname}.py"
+    else:
+        try:
+            user, repo, branch, path, parsed_alias = parse_spec(arg)
+        except ValueError as e:
+            print(f"[pygeturl] Error parsing spec: {e}")
+            return
 
-    url = build_url(user, repo, branch, path)
-    mod_path = CACHE_DIR / user / repo / branch / Path(path).parent
-    mod_file = mod_path / filename
-    mod_path.mkdir(parents=True, exist_ok=True)
+        filename = Path(path).name
+        modulename = filename.replace(".py", "")
+        aliasname = parsed_alias or _alias or modulename
+        url = build_url(user, repo, branch, path)
+        mod_path = CACHE_DIR / user / repo / branch / Path(path).parent
+        mod_path.mkdir(parents=True, exist_ok=True)
+        mod_file = mod_path / filename
 
-    print(f"[pyget] Downloading from: {url}")
+    print(f"[pygeturl] Downloading from: {url}")
     try:
         urllib.request.urlretrieve(url, mod_file)
     except Exception as e:
-        print(f"[pyget] Error downloading: {e}")
+        print(f"[pygeturl] Error downloading: {e}")
         return
 
     registry = load_registry()
@@ -102,10 +147,12 @@ def install_module(arg, _alias=None):
     save_registry(registry)
 
     ensure_pymod()
+    if is_url(arg):
+        entry = f'{aliasname} = "{url}"'
+    else:
+        entry = f'{aliasname} = "{user}/{repo}@{branch}/{path}"'
 
-    entry = f'{aliasname} = "{user}/{repo}@{branch}/{path}"'
     content = PYMOD_PATH.read_text().splitlines()
-
     if "[dependencies]" not in content:
         content.append("[dependencies]")
 
@@ -116,11 +163,11 @@ def install_module(arg, _alias=None):
         content.insert(dep_index + 1, entry)
         PYMOD_PATH.write_text("\n".join(content) + "\n")
 
-    print(f"[pyget] '{aliasname}' installed and added to py.mod.")
+    print(f"[pygeturl] '{aliasname}' installed and added to py.mod.")
 
 def install_from_pymod():
     if not PYMOD_PATH.exists():
-        print("[pyget] py.mod not found")
+        print("[pygeturl] py.mod not found")
         return
 
     lines = PYMOD_PATH.read_text().splitlines()
@@ -136,13 +183,16 @@ def install_from_pymod():
         if in_dependencies and "=" in line:
             alias, spec = map(str.strip, line.split("=", 1))
             spec = spec.strip('"')
-            install_module(f"{spec} as {alias}")
+            if 'http' not in spec:
+                install_module(f"{spec} as {alias}")
+            else:
+                install_module(spec, _alias=alias)
 
 
 def list_modules():
     reg = load_registry()
     if not reg:
-        print("[pyget] No modules installed.")
+        print("[pygeturl] No modules installed.")
         return
     for name, path in reg.items():
         print(f"{name} => {path}")
@@ -156,7 +206,7 @@ def remove_module(name):
             path.unlink()
         del reg[name]
         save_registry(reg)
-        print(f"[pyget] Removed {name}")
+        print(f"[pygeturl] Removed {name}")
 
         if PYMOD_PATH.exists():
             lines = PYMOD_PATH.read_text().splitlines()
@@ -166,9 +216,9 @@ def remove_module(name):
                     new_lines.append(line)
             PYMOD_PATH.write_text("\n".join(new_lines) + "\n")
     else:
-        print(f"[pyget] Module {name} not found")
+        print(f"[pygeturl] Module {name} not found")
 
 
 def set_registry(url):
     CUSTOM_REGISTRY_PATH.write_text(url.strip())
-    print(f"[pyget] Registry set to: {url}")
+    print(f"[pygeturl] Registry set to: {url}")

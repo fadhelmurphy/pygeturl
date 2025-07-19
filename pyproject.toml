@@ -1,5 +1,5 @@
 [project]
-name = "pyimporter"
+name = "pygeturl"
 version = "0.1.0"
 description = "Import Python modules from remote URLs like Go or Bun"
 authors = [{ name = "Fadhel Ijlal", email = "fadhelijlalfalah@gmail.com" }]
@@ -8,4 +8,4 @@ requires-python = ">=3.7"
 dependencies = []
 
 [project.scripts]
-pyget = "pyimporter.cli:main"
+pygeturl = "pygeturl.cli:main"

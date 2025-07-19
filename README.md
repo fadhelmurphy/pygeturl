@@ -1,4 +1,4 @@
-# PyImport
+# PyGetURL
 
 Sebuah tools untuk dapat menggunakan module python melalui url seperti layaknya Golang.
 

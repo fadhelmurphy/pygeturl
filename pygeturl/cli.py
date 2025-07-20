@@ -12,7 +12,7 @@ def main():
     args = sys.argv[1:]
 
     if not args:
-        print("Usage: pyget install <user/repo@version/module_path>")
+        print("Usage: pygeturl install <user/repo@version/module_path>")
         return
 
     cmd = args[0]

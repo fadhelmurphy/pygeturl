@@ -10,12 +10,9 @@ from .common import (
     CUSTOM_REGISTRY_PATH,
     ensure_dirs,
     get_custom_registry_url,
-    APP_NAME
+    APP_NAME,
+    PYMOD_PATH
 )
-
-ensure_dirs()
-
-PYMOD_PATH = Path.cwd() / "py.mod"
 
 def is_url(s):
     return s.startswith("http://") or s.startswith("https://")
@@ -23,12 +20,13 @@ def is_url(s):
 
 def clean_cache():
     import os
+
     if CACHE_DIR.exists():
         shutil.rmtree(CACHE_DIR)
-    if REGISTRY_PATH.exists():
-        os.remove(REGISTRY_PATH)
-    if CUSTOM_REGISTRY_PATH.exists():
-        os.remove(CUSTOM_REGISTRY_PATH)
+        if REGISTRY_PATH.exists():
+            os.remove(REGISTRY_PATH)
+        if CUSTOM_REGISTRY_PATH.exists():
+            os.remove(CUSTOM_REGISTRY_PATH)
         print(f"Cache directory at {CACHE_DIR} has been removed.")
     else:
         print("ℹNo cache found to clean.")
@@ -293,6 +291,7 @@ def install_from_git(arg, aliasname=None):
 
 
 def install_module(arg, _alias=None):
+    ensure_dirs()
     if arg.startswith("git+"):
         install_from_git(arg, _alias)
     elif is_url(arg):

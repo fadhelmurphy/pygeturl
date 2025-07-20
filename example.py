@@ -1,6 +1,4 @@
-import pandas
-import pygeturl.importer
-import sheesh_man
-import numpy
+import pygeturl.importer 
+import sebuah_mod
 
-print(sheesh_man.list_ssh_keys())
+print(sebuah_mod.list_ssh_keys())

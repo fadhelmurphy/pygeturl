@@ -8,7 +8,9 @@ setup(
     author_email="fadhelijlalfalah@gmail.com",
     packages=find_packages(),
     include_package_data=True,
-    install_requires=[],
+    install_requires=[
+        "GitPython>=3.1.0",
+    ],
     entry_points={
         "console_scripts": [
             "pygeturl=pygeturl.cli:main", 

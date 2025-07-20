@@ -5,7 +5,9 @@ description = "Import Python modules from remote URLs like Go or Bun"
 authors = [{ name = "Fadhel Ijlal", email = "fadhelijlalfalah@gmail.com" }]
 readme = "README.md"
 requires-python = ">=3.7"
-dependencies = []
+dependencies = [
+    "GitPython>=3.1.0"
+]
 
 [project.scripts]
 pygeturl = "pygeturl.cli:main"

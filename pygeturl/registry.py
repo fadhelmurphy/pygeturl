@@ -1,6 +1,8 @@
 import json
 import urllib.request
 import shutil
+import ast
+import tomllib
 from pathlib import Path
 from .common import (
     REGISTRY_PATH,
@@ -98,42 +100,107 @@ def ensure_pymod():
         PYMOD_PATH.write_text(
             "[project]\nname = \"pyget_project\"\nversion = \"0.1.0\"\n\n[dependencies]\n"
         )
-        
-def install_module(arg, _alias=None):
-    if "@" in arg:
-        repo_part, branch = arg.split("@", 1)
-    else:
-        repo_part, branch = arg, "master"
 
-    is_python_file = arg.endswith(".py")
-    is_full_repo = not is_url(arg) and not is_python_file and len(repo_part.split("/")) == 2
+def parse_setup_py(setup_path: Path) -> Path | None:
+    try:
+        tree = ast.parse(setup_path.read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and getattr(node.func, 'id', '') == 'setup':
+                for kw in node.keywords:
+                    if kw.arg == 'py_modules' and isinstance(kw.value, ast.List):
+                        mod_name = kw.value.elts[0].s
+                        mod_path = setup_path.parent / f"{mod_name}.py"
+                        if mod_path.exists():
+                            return mod_path
+                    if kw.arg == 'packages' and isinstance(kw.value, ast.List):
+                        pkg_name = kw.value.elts[0].s
+                        mod_path = setup_path.parent / pkg_name / "__init__.py"
+                        if mod_path.exists():
+                            return mod_path
+        return None
+    except Exception as e:
+        print(f"[pygeturl] Failed to parse setup.py: {e}")
+        return None
 
-    if is_full_repo:
-        url = f"git+https://github.com/{repo_part}.git@{branch}"
-        print(f"[pygeturl] Installing package from GitHub: {url}")
-        subprocess.run(["pip", "install", url])
+def parse_module_entry(path: Path) -> Path | None:
+    try:
+        if path.name == "setup.py":
+            return parse_setup_py(path)
+
+        if path.name == "pyproject.toml":
+            data = tomllib.loads(path.read_text())
+            project = data.get("project") or data.get("tool", {}).get("poetry")
+
+            if project:
+                if "py_modules" in project and project["py_modules"]:
+                    modname = project["py_modules"][0]
+                    modpath = path.parent / f"{modname}.py"
+                    if modpath.exists():
+                        return modpath
+
+                if "packages" in project and project["packages"]:
+                    pkgname = project["packages"][0]
+                    pkgpath = path.parent / pkgname / "__init__.py"
+                    if pkgpath.exists():
+                        return pkgpath
+
+                if "name" in project:
+                    modname = project["name"].replace("-", "_")
+                    flat = path.parent / f"{modname}.py"
+                    if flat.exists():
+                        return flat
+                    nested = path.parent / modname / "__init__.py"
+                    if nested.exists():
+                        return nested
+
+        candidates = sorted(path.parent.glob("*.py"))
+        for f in candidates:
+            if f.name not in ("setup.py", "__init__.py", "test.py"):
+                return f
+
+        return None
+    except Exception as e:
+        print(f"[pygeturl] Failed to parse module entry: {e}")
+        return None
+
+def add_to_registry_and_pymod(aliasname, resolved_path, spec_str):
+    registry = load_registry()
+    registry[aliasname] = str(resolved_path)
+    save_registry(registry)
+
+    ensure_pymod()
+    entry = f'{aliasname} = "{spec_str}"'
+
+    content = PYMOD_PATH.read_text().splitlines()
+    if "[dependencies]" not in content:
+        content.append("[dependencies]")
+
+    dep_index = content.index("[dependencies]")
+    existing_deps = {
+        line.split("=")[0].strip()
+        for line in content[dep_index + 1:]
+        if "=" in line
+    }
+
+    if aliasname not in existing_deps:
+        content.insert(dep_index + 1, entry)
+        PYMOD_PATH.write_text("\n".join(content) + "\n")
+
+    
+def install_from_spec(arg, _alias=None):
+    try:
+        user, repo, branch, path, parsed_alias = parse_spec(arg)
+    except ValueError as e:
+        print(f"[pygeturl] Error parsing spec: {e}")
         return
 
-    if is_url(arg):
-        url = arg
-        aliasname = _alias or Path(url).stem
-        mod_path = CACHE_DIR / "external"
-        mod_path.mkdir(parents=True, exist_ok=True)
-        mod_file = mod_path / f"{aliasname}.py"
-    else:
-        try:
-            user, repo, branch, path, parsed_alias = parse_spec(arg)
-        except ValueError as e:
-            print(f"[pygeturl] Error parsing spec: {e}")
-            return
-
-        filename = Path(path).name
-        modulename = filename.replace(".py", "")
-        aliasname = parsed_alias or _alias or modulename
-        url = build_url(user, repo, branch, path)
-        mod_path = CACHE_DIR / user / repo / branch / Path(path).parent
-        mod_path.mkdir(parents=True, exist_ok=True)
-        mod_file = mod_path / filename
+    filename = Path(path).name
+    modulename = filename.replace(".py", "")
+    aliasname = parsed_alias or _alias or modulename
+    url = build_url(user, repo, branch, path)
+    mod_path = CACHE_DIR / user / repo / branch / Path(path).parent
+    mod_path.mkdir(parents=True, exist_ok=True)
+    mod_file = mod_path / filename
 
     print(f"[pygeturl] Downloading from: {url}")
     try:
@@ -142,28 +209,78 @@ def install_module(arg, _alias=None):
         print(f"[pygeturl] Error downloading: {e}")
         return
 
-    registry = load_registry()
-    registry[aliasname] = str(mod_file.resolve())
-    save_registry(registry)
-
-    ensure_pymod()
-    if is_url(arg):
-        entry = f'{aliasname} = "{url}"'
-    else:
-        entry = f'{aliasname} = "{user}/{repo}@{branch}/{path}"'
-
-    content = PYMOD_PATH.read_text().splitlines()
-    if "[dependencies]" not in content:
-        content.append("[dependencies]")
-
-    dep_index = content.index("[dependencies]")
-    existing_deps = {line.split("=")[0].strip() for line in content[dep_index + 1:] if "=" in line}
-
-    if aliasname not in existing_deps:
-        content.insert(dep_index + 1, entry)
-        PYMOD_PATH.write_text("\n".join(content) + "\n")
-
+    spec = f"{user}/{repo}@{branch}/{path}"
+    add_to_registry_and_pymod(aliasname, mod_file.resolve(), spec)
     print(f"[pygeturl] '{aliasname}' installed and added to py.mod.")
+
+    
+def install_from_url(url, aliasname=None):
+    aliasname = aliasname or Path(url).stem
+    mod_path = CACHE_DIR / "external"
+    mod_path.mkdir(parents=True, exist_ok=True)
+    mod_file = mod_path / f"{aliasname}.py"
+
+    print(f"[pygeturl] Downloading from: {url}")
+    try:
+        urllib.request.urlretrieve(url, mod_file)
+    except Exception as e:
+        print(f"[pygeturl] Error downloading: {e}")
+        return
+
+    add_to_registry_and_pymod(aliasname, mod_file.resolve(), url)
+    print(f"[pygeturl] '{aliasname}' installed and added to py.mod.")
+
+    
+def install_from_git(arg, aliasname=None):
+    import re
+    from git import Repo
+
+    match = re.match(r"git\+(.+?)(?:@(.+))?$", arg)
+    if not match:
+        print("[pygeturl] Invalid git+ URL format")
+        return
+
+    git_url, branch = match.groups()
+    branch = branch or "master"
+
+    parts = git_url.replace("https://", "").replace("http://", "").replace(".git", "").split("/")
+    if len(parts) < 3:
+        print("[pygeturl] Invalid GitHub path")
+        return
+
+    _, user, repo = parts
+    aliasname = aliasname or repo
+    mod_path = CACHE_DIR / user / repo / branch
+
+    if mod_path.exists():
+        shutil.rmtree(mod_path)
+    print(f"[pygeturl] Cloning {git_url}@{branch}...")
+    try:
+        Repo.clone_from(git_url, mod_path, branch=branch)
+    except Exception as e:
+        print(f"[pygeturl] Git clone failed: {e}")
+        return
+
+    entry_file = (
+        parse_module_entry(mod_path / "setup.py") or
+        parse_module_entry(mod_path / "pyproject.toml")
+    )
+
+    if not entry_file:
+        print(f"[pygeturl] No valid Python entrypoint found in repo {repo}")
+        return
+
+    add_to_registry_and_pymod(aliasname, entry_file.resolve(), f"git+{git_url}@{branch}")
+    print(f"[pygeturl] '{aliasname}' installed from git+ and added to py.mod.")
+
+
+def install_module(arg, _alias=None):
+    if arg.startswith("git+"):
+        install_from_git(arg, _alias)
+    elif is_url(arg):
+        install_from_url(arg, _alias)
+    else:
+        install_from_spec(arg, _alias)
 
 def install_from_pymod():
     if not PYMOD_PATH.exists():
@@ -183,8 +300,16 @@ def install_from_pymod():
         if in_dependencies and "=" in line:
             alias, spec = map(str.strip, line.split("=", 1))
             spec = spec.strip('"')
-            if 'http' not in spec:
-                install_module(f"{spec} as {alias}")
+
+            if spec.startswith("git+"):
+                if "@" in spec:
+                    git_url_branch = spec[4:]
+                    git_url, branch = git_url_branch.rsplit("@", 1)
+                else:
+                    git_url = spec[4:]
+                    branch = "master"
+
+                install_module(f"git+{git_url}@{branch}", _alias = alias)
             else:
                 install_module(spec, _alias=alias)
 

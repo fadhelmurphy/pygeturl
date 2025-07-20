@@ -10,8 +10,8 @@ from .common import (
     CUSTOM_REGISTRY_PATH,
     ensure_dirs,
     get_custom_registry_url,
+    APP_NAME
 )
-import subprocess
 
 ensure_dirs()
 
@@ -22,8 +22,13 @@ def is_url(s):
 
 
 def clean_cache():
+    import os
     if CACHE_DIR.exists():
         shutil.rmtree(CACHE_DIR)
+    if REGISTRY_PATH.exists():
+        os.remove(REGISTRY_PATH)
+    if CUSTOM_REGISTRY_PATH.exists():
+        os.remove(CUSTOM_REGISTRY_PATH)
         print(f"Cache directory at {CACHE_DIR} has been removed.")
     else:
         print("ℹNo cache found to clean.")
@@ -55,7 +60,7 @@ def parse_spec(arg):
         alias = alias.strip()
 
     if "/" not in arg:
-        raise ValueError("[pygeturl] Format must include user/repo")
+        raise ValueError(f"{APP_NAME} Format must include user/repo")
 
     if "@" in arg:
         repo_part, path_part = arg.split("@", 1)
@@ -65,7 +70,7 @@ def parse_spec(arg):
 
     repo_parts = repo_part.strip("/").split("/")
     if len(repo_parts) < 2:
-        raise ValueError("[pygeturl] Invalid user/repo format")
+        raise ValueError(f"{APP_NAME} Invalid user/repo format")
 
     user, repo = repo_parts[:2]
 
@@ -96,7 +101,7 @@ def build_url(user, repo, branch, path):
 
 def ensure_pymod():
     if not PYMOD_PATH.exists():
-        print("[pygeturl] py.mod not found, creating...")
+        print(f"{APP_NAME} py.mod not found, creating...")
         PYMOD_PATH.write_text(
             "[project]\nname = \"pyget_project\"\nversion = \"0.1.0\"\n\n[dependencies]\n"
         )
@@ -119,7 +124,7 @@ def parse_setup_py(setup_path: Path) -> Path | None:
                             return mod_path
         return None
     except Exception as e:
-        print(f"[pygeturl] Failed to parse setup.py: {e}")
+        print(f"{APP_NAME} Failed to parse setup.py: {e}")
         return None
 
 def parse_module_entry(path: Path) -> Path | None:
@@ -160,8 +165,12 @@ def parse_module_entry(path: Path) -> Path | None:
 
         return None
     except Exception as e:
-        print(f"[pygeturl] Failed to parse module entry: {e}")
+        print(f"{APP_NAME} Failed to parse module entry: {e}")
         return None
+
+def is_alias_installed(aliasname):
+    registry = load_registry()
+    return aliasname in registry
 
 def add_to_registry_and_pymod(aliasname, resolved_path, spec_str):
     registry = load_registry()
@@ -191,44 +200,50 @@ def install_from_spec(arg, _alias=None):
     try:
         user, repo, branch, path, parsed_alias = parse_spec(arg)
     except ValueError as e:
-        print(f"[pygeturl] Error parsing spec: {e}")
+        print(f"{APP_NAME} Error parsing spec: {e}")
         return
 
     filename = Path(path).name
     modulename = filename.replace(".py", "")
     aliasname = parsed_alias or _alias or modulename
+    if is_alias_installed(aliasname):
+        print(f"{APP_NAME} '{aliasname}' is already installed. Skipping.")
+        return
     url = build_url(user, repo, branch, path)
-    mod_path = CACHE_DIR / user / repo / branch / Path(path).parent
+    mod_path = CACHE_DIR / aliasname / user / repo / branch / Path(path).parent
     mod_path.mkdir(parents=True, exist_ok=True)
     mod_file = mod_path / filename
 
-    print(f"[pygeturl] Downloading from: {url}")
+    print(f"{APP_NAME} Downloading from: {url}")
     try:
         urllib.request.urlretrieve(url, mod_file)
     except Exception as e:
-        print(f"[pygeturl] Error downloading: {e}")
+        print(f"{APP_NAME} Error downloading: {e}")
         return
 
     spec = f"{user}/{repo}@{branch}/{path}"
     add_to_registry_and_pymod(aliasname, mod_file.resolve(), spec)
-    print(f"[pygeturl] '{aliasname}' installed and added to py.mod.")
+    print(f"{APP_NAME} '{aliasname}' installed and added to py.mod.")
 
     
 def install_from_url(url, aliasname=None):
     aliasname = aliasname or Path(url).stem
+    if is_alias_installed(aliasname):
+        print(f"{APP_NAME} '{aliasname}' is already installed. Skipping.")
+        return
     mod_path = CACHE_DIR / "external"
     mod_path.mkdir(parents=True, exist_ok=True)
     mod_file = mod_path / f"{aliasname}.py"
 
-    print(f"[pygeturl] Downloading from: {url}")
+    print(f"{APP_NAME} Downloading from: {url}")
     try:
         urllib.request.urlretrieve(url, mod_file)
     except Exception as e:
-        print(f"[pygeturl] Error downloading: {e}")
+        print(f"{APP_NAME} Error downloading: {e}")
         return
 
     add_to_registry_and_pymod(aliasname, mod_file.resolve(), url)
-    print(f"[pygeturl] '{aliasname}' installed and added to py.mod.")
+    print(f"{APP_NAME} '{aliasname}' installed and added to py.mod.")
 
     
 def install_from_git(arg, aliasname=None):
@@ -237,7 +252,7 @@ def install_from_git(arg, aliasname=None):
 
     match = re.match(r"git\+(.+?)(?:@(.+))?$", arg)
     if not match:
-        print("[pygeturl] Invalid git+ URL format")
+        print(f"{APP_NAME} Invalid git+ URL format")
         return
 
     git_url, branch = match.groups()
@@ -245,20 +260,23 @@ def install_from_git(arg, aliasname=None):
 
     parts = git_url.replace("https://", "").replace("http://", "").replace(".git", "").split("/")
     if len(parts) < 3:
-        print("[pygeturl] Invalid GitHub path")
+        print(f"{APP_NAME} Invalid GitHub path")
         return
 
     _, user, repo = parts
     aliasname = aliasname or repo
-    mod_path = CACHE_DIR / user / repo / branch
+    if is_alias_installed(aliasname):
+        print(f"{APP_NAME} '{aliasname}' is already installed. Skipping.")
+        return
+    mod_path = CACHE_DIR / aliasname / user / repo / branch
 
     if mod_path.exists():
         shutil.rmtree(mod_path)
-    print(f"[pygeturl] Cloning {git_url}@{branch}...")
+    print(f"{APP_NAME} Cloning {git_url}@{branch}...")
     try:
         Repo.clone_from(git_url, mod_path, branch=branch)
     except Exception as e:
-        print(f"[pygeturl] Git clone failed: {e}")
+        print(f"{APP_NAME} Git clone failed: {e}")
         return
 
     entry_file = (
@@ -267,11 +285,11 @@ def install_from_git(arg, aliasname=None):
     )
 
     if not entry_file:
-        print(f"[pygeturl] No valid Python entrypoint found in repo {repo}")
+        print(f"{APP_NAME} No valid Python entrypoint found in repo {repo}")
         return
 
     add_to_registry_and_pymod(aliasname, entry_file.resolve(), f"git+{git_url}@{branch}")
-    print(f"[pygeturl] '{aliasname}' installed from git+ and added to py.mod.")
+    print(f"{APP_NAME} '{aliasname}' installed from git+ and added to py.mod.")
 
 
 def install_module(arg, _alias=None):
@@ -284,7 +302,7 @@ def install_module(arg, _alias=None):
 
 def install_from_pymod():
     if not PYMOD_PATH.exists():
-        print("[pygeturl] py.mod not found")
+        print(f"{APP_NAME} py.mod not found")
         return
 
     lines = PYMOD_PATH.read_text().splitlines()
@@ -317,7 +335,7 @@ def install_from_pymod():
 def list_modules():
     reg = load_registry()
     if not reg:
-        print("[pygeturl] No modules installed.")
+        print(f"{APP_NAME} No modules installed.")
         return
     for name, path in reg.items():
         print(f"{name} => {path}")
@@ -331,7 +349,7 @@ def remove_module(name):
             path.unlink()
         del reg[name]
         save_registry(reg)
-        print(f"[pygeturl] Removed {name}")
+        print(f"{APP_NAME} Removed {name}")
 
         if PYMOD_PATH.exists():
             lines = PYMOD_PATH.read_text().splitlines()
@@ -341,9 +359,9 @@ def remove_module(name):
                     new_lines.append(line)
             PYMOD_PATH.write_text("\n".join(new_lines) + "\n")
     else:
-        print(f"[pygeturl] Module {name} not found")
+        print(f"{APP_NAME} Module {name} not found")
 
 
 def set_registry(url):
     CUSTOM_REGISTRY_PATH.write_text(url.strip())
-    print(f"[pygeturl] Registry set to: {url}")
+    print(f"{APP_NAME} Registry set to: {url}")

@@ -1,10 +1,10 @@
 from pathlib import Path
-import os
 
 PYGET_HOME = Path.home() / ".pygeturl"
 CACHE_DIR = PYGET_HOME / "cache"
 REGISTRY_PATH = PYGET_HOME / "registry.json"
 CUSTOM_REGISTRY_PATH = PYGET_HOME / "registry.txt"
+APP_NAME = "[pygeturl]"
 
 def ensure_dirs():
     PYGET_HOME.mkdir(parents=True, exist_ok=True)
